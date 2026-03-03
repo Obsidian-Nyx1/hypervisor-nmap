@@ -2,7 +2,7 @@
 
 # ------------------------------------------------------------
 # Hypervisor Assessment Script using Nmap
-# Usage: ./assess.sh <single-IP> | ./assess.sh -f <ip-list.txt>
+# Usage: ./assess.sh [--sudo] <single-IP> | ./assess.sh [--sudo] -f <ip-list.txt>
 # ------------------------------------------------------------
 
 set -e  # Exit on error
@@ -17,26 +17,52 @@ BAR_WIDTH=30
 # Function to display usage
 usage() {
     echo "Usage:"
-    echo "  $0 <IP address>          Scan a single IP"
-    echo "  $0 -f <file>              Scan all IPs listed in a file (one per line)"
+    echo "  $0 [--sudo] <IP address>"
+    echo "  $0 [--sudo] -f <file>"
     echo "Example:"
     echo "  $0 192.168.1.100"
+    echo "  $0 --sudo 192.168.1.100"
     echo "  $0 -f targets.txt"
+    echo "  $0 --sudo -f targets.txt"
+    echo "Notes:"
+    echo "  Default    Run nmap without sudo."
+    echo "  --sudo     Run nmap through sudo. sudo will prompt if authentication is needed."
     exit 1
 }
 
-# Function to check if we can use sudo
-check_sudo() {
-    if command -v sudo &> /dev/null; then
-        # Non-interactive sudo check: fall back cleanly if auth is unavailable.
-        if sudo -n -v &> /dev/null; then
-            echo "sudo"
-        else
-            echo ""
-        fi
+print_banner() {
+    local mode_label=$1
+    local target_label=$2
+
+    echo "------------------------------------------------------------"
+    echo "Hypervisor Assessment Script using Nmap"
+    echo "Description : Scans one IP or a target file for open services and vulnerabilities."
+    echo "Mode        : $mode_label"
+    echo "Target      : $target_label"
+    echo "Information : Single-IP runs use one combined scan. Multi-IP file runs show phase progress."
+    echo "Instructions: Default mode is unprivileged. Add --sudo only when you want a privileged scan."
+    if [ -t 1 ]; then
+        echo "Output      : Results save to nmap_scan_<ip>.txt unless stdout is redirected."
     else
-        echo ""
+        echo "Output      : Stdout is redirected, so results will be written to the redirected output."
     fi
+    echo "------------------------------------------------------------"
+}
+
+resolve_mode() {
+    case "$1" in
+        --sudo)
+            if ! command -v sudo &> /dev/null; then
+                echo -e "${RED}Error: sudo is not installed, so --sudo cannot be used.${NC}"
+                exit 1
+            fi
+            echo "sudo"
+            ;;
+        *)
+            echo -e "${RED}Error: Invalid option '$1'. Only --sudo is supported.${NC}"
+            usage
+            ;;
+    esac
 }
 
 # Function to validate IP format
@@ -189,11 +215,23 @@ if ! command -v nmap &> /dev/null; then
     exit 1
 fi
 
-# Determine sudo availability
-SUDO_CMD=$(check_sudo)
 TARGETS=()
 
 # Parse arguments
+if [ $# -eq 0 ]; then
+    usage
+fi
+
+SUDO_CMD=""
+MODE_LABEL="no-sudo"
+if [ "$1" = "--sudo" ]; then
+    SUDO_CMD=$(resolve_mode "$1")
+    MODE_LABEL="sudo"
+    shift
+elif [[ "$1" == --* ]]; then
+    resolve_mode "$1"
+fi
+
 if [ $# -eq 0 ]; then
     usage
 fi
@@ -202,6 +240,7 @@ fi
 if [ $# -eq 1 ] && [[ "$1" != "-f" ]]; then
     ip="$1"
     if is_valid_ip "$ip"; then
+        print_banner "$MODE_LABEL" "$ip"
         scan_ip "$ip" "$SUDO_CMD" "false"
     else
         echo -e "${RED}Invalid IP format: $ip${NC}"
@@ -219,6 +258,7 @@ elif [ "$1" = "-f" ]; then
         exit 1
     fi
 
+    print_banner "$MODE_LABEL" "file:$2"
     echo -e "${GREEN}[*] Reading targets from file: $2${NC}"
     collect_targets "$2"
 
