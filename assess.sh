@@ -43,21 +43,32 @@ scan_ip() {
     local ip=$1
     local output_file="nmap_scan_${ip}.txt"
     local sudo_cmd=$2
+    local -a nmap_args
+    local -a cmd
 
     echo -e "${YELLOW}[*] Starting scan for IP: $ip${NC}"
-    echo -e "${YELLOW}[*] Output will be saved to: $output_file${NC}"
+    nmap_args=(-sV --script vuln --open --reason)
 
-    # Build nmap command
-    local nmap_cmd="$sudo_cmd nmap -sV --script vuln --open --reason -oN \"$output_file\" \"$ip\""
+    if [ -t 1 ]; then
+        echo -e "${YELLOW}[*] Output will be saved to: $output_file${NC}"
+        nmap_args+=(-oN "$output_file")
+    else
+        echo -e "${YELLOW}[*] Stdout is redirected. Writing scan results to the redirected output only.${NC}"
+    fi
+
+    nmap_args+=("$ip")
 
     # If sudo is not available, warn user
     if [ -z "$sudo_cmd" ]; then
         echo -e "${RED}[!] Warning: sudo not available. Running nmap without root privileges.${NC}"
         echo -e "${RED}[!] Some scans (SYN scan, certain vulnerability checks) may be less accurate or fail.${NC}"
+        cmd=(nmap "${nmap_args[@]}")
+    else
+        cmd=(sudo nmap "${nmap_args[@]}")
     fi
 
     # Execute the scan
-    eval $nmap_cmd
+    "${cmd[@]}"
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}[✓] Scan completed for $ip${NC}"
