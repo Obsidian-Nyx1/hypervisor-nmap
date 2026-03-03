@@ -28,8 +28,8 @@ usage() {
 # Function to check if we can use sudo
 check_sudo() {
     if command -v sudo &> /dev/null; then
-        # Try to update sudo timestamp (will prompt for password if needed)
-        if sudo -v &> /dev/null; then
+        # Non-interactive sudo check: fall back cleanly if auth is unavailable.
+        if sudo -n -v &> /dev/null; then
             echo "sudo"
         else
             echo ""
