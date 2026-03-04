@@ -24,14 +24,17 @@
 ```bash
 ./assess.sh 192.168.1.100
 ./assess.sh --sudo 192.168.1.100
+./assess.sh -t3 192.168.1.100
 ./assess.sh -f targets.txt
-./assess.sh --sudo -f targets.txt
+./assess.sh --sudo -t2 -f targets.txt
 ```
 
 ## Modes
 
 - default: runs `nmap` without `sudo`
 - `--sudo`: runs `nmap` through `sudo`. This can prompt for your sudo password if your session is not already authenticated.
+- `-t0` to `-t4`: set the Nmap timing template, with `-T4` used by default
+- values above `-T4` are rejected so the script never exceeds timing template 4
 
 ## Output Behavior
 

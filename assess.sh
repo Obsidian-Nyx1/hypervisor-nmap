@@ -17,16 +17,19 @@ BAR_WIDTH=30
 # Function to display usage
 usage() {
     echo "Usage:"
-    echo "  $0 [--sudo] <IP address>"
-    echo "  $0 [--sudo] -f <file>"
+    echo "  $0 [--sudo] [-t0|-t1|-t2|-t3|-t4] <IP address>"
+    echo "  $0 [--sudo] [-t0|-t1|-t2|-t3|-t4] -f <file>"
     echo "Example:"
     echo "  $0 192.168.1.100"
+    echo "  $0 -t3 192.168.1.100"
     echo "  $0 --sudo 192.168.1.100"
     echo "  $0 -f targets.txt"
-    echo "  $0 --sudo -f targets.txt"
+    echo "  $0 --sudo -t2 -f targets.txt"
     echo "Notes:"
     echo "  Default    Run nmap without sudo."
     echo "  --sudo     Run nmap through sudo. sudo will prompt if authentication is needed."
+    echo "  -tN        Set Nmap timing template from 0 to 4 only. Default is -T4."
+    echo "             Values above 4 are rejected."
     exit 1
 }
 
@@ -38,6 +41,7 @@ print_banner() {
     echo "Hypervisor Assessment Script using Nmap"
     echo "Description : Scans one IP or a target file for open services and vulnerabilities."
     echo "Mode        : $mode_label"
+    echo "Timing      : $TIMING_LABEL (capped at T4)"
     echo "Target      : $target_label"
     echo "Information : All runs execute discovery, service detection, vulnerability, and OS detection phases."
     echo "Instructions: Default mode is unprivileged. Add --sudo only when you want a privileged scan."
@@ -60,6 +64,29 @@ resolve_mode() {
             ;;
         *)
             echo -e "${RED}Error: Invalid option '$1'. Only --sudo is supported.${NC}"
+            usage
+            ;;
+    esac
+}
+
+resolve_timing() {
+    case "$1" in
+        -t0|-t1|-t2|-t3|-t4)
+            echo "-T${1#-t}"
+            ;;
+        -t[5-9]|-t[1-9][0-9]*)
+            echo -e "${RED}Error: $1 exceeds the maximum allowed timing template. Use -t0 through -t4 only.${NC}"
+            exit 1
+            ;;
+        -T[0-4])
+            echo "${1}"
+            ;;
+        -T[5-9]|-T[1-9][0-9]*)
+            echo -e "${RED}Error: $1 exceeds the maximum allowed timing template. Use -t0 through -t4 only.${NC}"
+            exit 1
+            ;;
+        *)
+            echo -e "${RED}Error: Invalid timing option '$1'. Use -t0 through -t4 only.${NC}"
             usage
             ;;
     esac
@@ -577,6 +604,7 @@ scan_ip() {
     local discovery_label=""
     local -a scan_prefix
     local -a phase_cmd
+    local -a nmap_base_cmd
     local discovery_file
     local service_file
     local vuln_file
@@ -611,6 +639,8 @@ scan_ip() {
         discovery_label="Stealth SYN scan"
     fi
 
+    nmap_base_cmd=("${scan_prefix[@]}" "$TIMING_OPTION")
+
     discovery_file=$(mktemp)
     service_file=$(mktemp)
     vuln_file=$(mktemp)
@@ -620,11 +650,11 @@ scan_ip() {
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "$discovery_label"
     fi
-    phase_cmd=("${scan_prefix[@]}" -Pn --top-ports 1000 --open --reason "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn --top-ports 1000 --open --reason "$ip")
     if [ -n "$sudo_cmd" ]; then
-        phase_cmd=("${scan_prefix[@]}" -Pn -sS --top-ports 1000 --open --reason "$ip")
+        phase_cmd=("${nmap_base_cmd[@]}" -Pn -sS --top-ports 1000 --open --reason "$ip")
     else
-        phase_cmd=("${scan_prefix[@]}" -Pn -sT --top-ports 1000 --open --reason "$ip")
+        phase_cmd=("${nmap_base_cmd[@]}" -Pn -sT --top-ports 1000 --open --reason "$ip")
     fi
     if run_scan_capture "$discovery_file" "${phase_cmd[@]}"; then
         discovery_status=0
@@ -636,7 +666,7 @@ scan_ip() {
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "Service detection scan"
     fi
-    phase_cmd=("${scan_prefix[@]}" -Pn -sV --open --reason "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -sV --open --reason "$ip")
     if run_scan_capture "$service_file" "${phase_cmd[@]}"; then
         service_status=0
     else
@@ -647,7 +677,7 @@ scan_ip() {
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "Vulnerability script scan"
     fi
-    phase_cmd=("${scan_prefix[@]}" -Pn -sV --script vuln --open --reason "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -sV --script vuln --open --reason "$ip")
     if run_scan_capture "$vuln_file" "${phase_cmd[@]}"; then
         vuln_status=0
     else
@@ -658,7 +688,7 @@ scan_ip() {
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "OS detection scan"
     fi
-    phase_cmd=("${scan_prefix[@]}" -Pn -O --osscan-guess "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -O --osscan-guess "$ip")
     if run_scan_capture "$os_file" "${phase_cmd[@]}"; then
         os_status=0
     else
@@ -687,19 +717,19 @@ scan_ip() {
     write_block "$output_file" "\nDetailed Results\n"
 
     if [ -n "$sudo_cmd" ]; then
-        phase_cmd=(sudo nmap -Pn -sS --top-ports 1000 --open --reason "$ip")
+        phase_cmd=(sudo nmap "$TIMING_OPTION" -Pn -sS --top-ports 1000 --open --reason "$ip")
     else
-        phase_cmd=(nmap -Pn -sT --top-ports 1000 --open --reason "$ip")
+        phase_cmd=(nmap "$TIMING_OPTION" -Pn -sT --top-ports 1000 --open --reason "$ip")
     fi
     write_phase_details "$output_file" "$ip" "Phase 1: $discovery_label" "Identify open ports using the initial discovery pass." "$discovery_summary" "$discovery_file" "${phase_cmd[@]}"
 
-    phase_cmd=("${scan_prefix[@]}" -Pn -sV --open --reason "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -sV --open --reason "$ip")
     write_phase_details "$output_file" "$ip" "Phase 2: Service detection" "Fingerprint the versions of any open services Nmap can identify." "$service_summary" "$service_file" "${phase_cmd[@]}"
 
-    phase_cmd=("${scan_prefix[@]}" -Pn -sV --script vuln --open --reason "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -sV --script vuln --open --reason "$ip")
     write_phase_details "$output_file" "$ip" "Phase 3: Vulnerability checks" "Run Nmap NSE vulnerability scripts against any open services." "$vuln_summary" "$vuln_file" "${phase_cmd[@]}"
 
-    phase_cmd=("${scan_prefix[@]}" -Pn -O --osscan-guess "$ip")
+    phase_cmd=("${nmap_base_cmd[@]}" -Pn -O --osscan-guess "$ip")
     write_phase_details "$output_file" "$ip" "Phase 4: OS detection" "Attempt to identify the target operating system from its network fingerprint." "$os_summary" "$os_file" "${phase_cmd[@]}"
 
     rm -f "$discovery_file" "$service_file" "$vuln_file" "$os_file"
@@ -751,13 +781,33 @@ fi
 
 SUDO_CMD=""
 MODE_LABEL="no-sudo"
-if [ "$1" = "--sudo" ]; then
-    SUDO_CMD=$(resolve_mode "$1")
-    MODE_LABEL="sudo"
-    shift
-elif [[ "$1" == --* ]]; then
-    resolve_mode "$1"
-fi
+TIMING_OPTION="-T4"
+TIMING_LABEL="T4"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sudo)
+            if [ -n "$SUDO_CMD" ]; then
+                echo -e "${RED}Error: --sudo was provided more than once.${NC}"
+                usage
+            fi
+            SUDO_CMD=$(resolve_mode "$1")
+            MODE_LABEL="sudo"
+            shift
+            ;;
+        -t*|-T*)
+            TIMING_OPTION=$(resolve_timing "$1")
+            TIMING_LABEL="${TIMING_OPTION#-}"
+            shift
+            ;;
+        --*)
+            resolve_mode "$1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 if [ $# -eq 0 ]; then
     usage

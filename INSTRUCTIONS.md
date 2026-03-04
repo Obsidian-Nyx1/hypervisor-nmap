@@ -16,14 +16,17 @@ Run it normally for no-sudo mode, or add `--sudo` for privileged scanning:
 ```bash
 ./assess.sh 192.168.1.100
 ./assess.sh --sudo 192.168.1.100
+./assess.sh -t3 192.168.1.100
 ./assess.sh -f targets.txt
-./assess.sh --sudo -f targets.txt
+./assess.sh --sudo -t2 -f targets.txt
 ```
 
 ## What The Options Mean
 
 - default mode: use unprivileged `nmap` execution
 - `--sudo`: use privileged `nmap` execution
+- `-t0` to `-t4`: set the timing template; the default is `-T4`
+- values above `-T4` are not allowed
 - `-f <file>`: read targets from a file
 
 ## Scan Phases
