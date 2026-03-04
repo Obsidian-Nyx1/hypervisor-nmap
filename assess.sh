@@ -30,6 +30,7 @@ usage() {
     echo "  --sudo     Run nmap through sudo. sudo will prompt if authentication is needed."
     echo "  -tN        Set Nmap timing template from 0 to 4 only. Default is -T4."
     echo "             Values above 4 are rejected."
+    echo "  -h, --help Show this help message."
     exit 1
 }
 
@@ -786,6 +787,9 @@ TIMING_LABEL="T4"
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        -h|--help)
+            usage
+            ;;
         --sudo)
             if [ -n "$SUDO_CMD" ]; then
                 echo -e "${RED}Error: --sudo was provided more than once.${NC}"
