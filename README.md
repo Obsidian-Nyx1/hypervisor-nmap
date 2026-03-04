@@ -7,7 +7,8 @@
 - Optional `--sudo` mode, with no-sudo as the default
 - Single target scanning
 - Multi-target file scanning
-- Multi-target progress bar with scan phase labels
+- Per-phase progress bar in terminal runs
+- Explanatory report header and per-phase summaries
 - Single redirected output stream when stdout is redirected
 
 ## Requirements
@@ -35,13 +36,18 @@
 - Normal terminal run:
   - Single-IP scans save to `nmap_scan_<ip>.txt`
   - Multi-IP scans save each target to its own `nmap_scan_<ip>.txt`
+- Each report explains:
+  - whether discovery used a TCP connect scan or a stealth SYN scan
+  - whether any open ports were found
+  - whether service detection had open ports to fingerprint
+  - whether `--script vuln` returned any findings
 - Redirected run such as `./assess.sh 192.168.1.10 > output.txt 2>&1`:
   - results are written to the redirected output
   - extra `nmap_scan_<ip>.txt` files are not created
 
-## Multi-IP Progress
+## Progress
 
-When using `-f` with more than one target and output is going to a terminal, the script shows:
+When output is going to a terminal, the script shows:
 
 - overall progress bar
 - current IP being scanned
