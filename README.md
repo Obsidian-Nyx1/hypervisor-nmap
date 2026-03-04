@@ -8,7 +8,8 @@
 - Single target scanning
 - Multi-target file scanning
 - Per-phase progress bar in terminal runs
-- Explanatory report header and per-phase summaries
+- Executive summary tables for ports, services, vulnerabilities, and OS detection
+- Explanatory report header and detailed per-phase sections
 - Single redirected output stream when stdout is redirected
 
 ## Requirements
@@ -41,6 +42,11 @@
   - whether any open ports were found
   - whether service detection had open ports to fingerprint
   - whether `--script vuln` returned any findings
+- Each report starts with summary tables for:
+  - ports and their status
+  - identified services
+  - vulnerability-script findings
+  - OS detection results
 - Redirected run such as `./assess.sh 192.168.1.10 > output.txt 2>&1`:
   - results are written to the redirected output
   - extra `nmap_scan_<ip>.txt` files are not created
@@ -56,6 +62,7 @@ When output is going to a terminal, the script shows:
   - `TCP connect scan` in default mode
   - `Service detection scan`
   - `Vulnerability script scan`
+  - `OS detection scan`
 
 ## Input File Format
 

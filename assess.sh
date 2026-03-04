@@ -39,7 +39,7 @@ print_banner() {
     echo "Description : Scans one IP or a target file for open services and vulnerabilities."
     echo "Mode        : $mode_label"
     echo "Target      : $target_label"
-    echo "Information : All runs execute discovery, service detection, and vulnerability phases."
+    echo "Information : All runs execute discovery, service detection, vulnerability, and OS detection phases."
     echo "Instructions: Default mode is unprivileged. Add --sudo only when you want a privileged scan."
     if [ -t 1 ]; then
         echo "Output      : Results save to nmap_scan_<ip>.txt unless stdout is redirected."
@@ -115,6 +115,17 @@ append_file() {
     fi
 }
 
+run_scan_capture() {
+    local result_file=$1
+    shift
+
+    if "$@" > "$result_file" 2>&1; then
+        return 0
+    fi
+
+    return 1
+}
+
 count_open_ports() {
     local result_file=$1
 
@@ -124,7 +135,136 @@ count_open_ports() {
 phase_has_vuln_findings() {
     local result_file=$1
 
-    grep -Eq 'VULNERABLE|CVE-|IDs:|risk factor|State: VULNERABLE' "$result_file" 2>/dev/null
+    awk '
+        /^[0-9]+\/(tcp|udp)/ { current_port=$1; next }
+        /^\|[_ ]?[A-Za-z0-9._-]+:/ {
+            line=$0
+            sub(/^\|[_ ]?/, "", line)
+            split(line, parts, ":")
+            if (parts[1] != "VULNERABLE" && parts[1] != "Not shown" && parts[1] != "Service Info") {
+                found=1
+                exit
+            }
+        }
+        END { exit(found ? 0 : 1) }
+    ' "$result_file"
+}
+
+extract_vuln_rows() {
+    local result_file=$1
+
+    awk '
+        /^[0-9]+\/(tcp|udp)[[:space:]]+open/ {
+            split($1, parts, "/")
+            current_port=parts[1]
+            current_proto=parts[2]
+            current_service=$3
+            next
+        }
+        /^\|[_ ]?[A-Za-z0-9._-]+:/ {
+            line=$0
+            sub(/^\|[_ ]?/, "", line)
+            split(line, parts, ":")
+            script_name=parts[1]
+            if (script_name != "VULNERABLE" && script_name != "Not shown" && script_name != "Service Info") {
+                print current_port "\t" current_proto "\t" current_service "\t" script_name
+            }
+        }
+    ' "$result_file"
+}
+
+os_detected_value() {
+    local result_file=$1
+    local os_value=""
+
+    os_value=$(grep -m1 '^OS details:' "$result_file" | cut -d: -f2- | xargs || true)
+    if [ -z "$os_value" ]; then
+        os_value=$(grep -m1 '^Aggressive OS guesses:' "$result_file" | cut -d: -f2- | xargs || true)
+    fi
+    if [ -z "$os_value" ]; then
+        os_value=$(grep -m1 '^Running:' "$result_file" | cut -d: -f2- | xargs || true)
+    fi
+
+    if [ -z "$os_value" ]; then
+        echo "Not identified"
+    else
+        echo "$os_value"
+    fi
+}
+
+os_device_type_value() {
+    local result_file=$1
+    local value
+
+    value=$(grep -m1 '^Device type:' "$result_file" | cut -d: -f2- | xargs || true)
+    if [ -z "$value" ]; then
+        echo "Not identified"
+    else
+        echo "$value"
+    fi
+}
+
+os_distance_value() {
+    local result_file=$1
+    local value
+
+    value=$(grep -m1 '^Network Distance:' "$result_file" | cut -d: -f2- | xargs || true)
+    if [ -z "$value" ]; then
+        echo "Not identified"
+    else
+        echo "$value"
+    fi
+}
+
+summarize_phase() {
+    local phase_key=$1
+    local result_file=$2
+    local scan_status=$3
+    local open_ports=0
+
+    if [ "$scan_status" -ne 0 ]; then
+        echo "Scan command failed. See raw output below."
+        return
+    fi
+
+    open_ports=$(count_open_ports "$result_file")
+
+    case "$phase_key" in
+        discovery)
+            if [ "$open_ports" -gt 0 ]; then
+                echo "Scan completed. Open ports found in discovery: $open_ports."
+            else
+                echo "Scan completed. No open ports were reported during discovery."
+            fi
+            ;;
+        service)
+            if [ "$open_ports" -gt 0 ]; then
+                echo "Scan completed. Service detection returned $open_ports open port entry(s)."
+            else
+                echo "Scan completed. No open ports were available for service detection results."
+            fi
+            ;;
+        vuln)
+            if [ "$open_ports" -gt 0 ]; then
+                if phase_has_vuln_findings "$result_file"; then
+                    echo "Scan completed. Vulnerability scripts returned output for at least one open service."
+                else
+                    echo "Scan completed. Vulnerability scripts ran against open services, but no findings were reported by the NSE vuln scripts."
+                fi
+            else
+                echo "Scan completed. No open ports were available for vulnerability script checks."
+            fi
+            ;;
+        os)
+            if grep -qi 'requires root privileges' "$result_file"; then
+                echo "Scan completed. OS detection requires sudo/root privileges for reliable fingerprinting."
+            elif grep -qi 'Too many fingerprints match' "$result_file" || grep -q '^OS details:' "$result_file" || grep -q '^Running:' "$result_file" || grep -q '^Aggressive OS guesses:' "$result_file"; then
+                echo "Scan completed. OS detection produced a fingerprint result."
+            else
+                echo "Scan completed. OS detection did not identify a confident match."
+            fi
+            ;;
+    esac
 }
 
 write_report_intro() {
@@ -140,69 +280,176 @@ write_report_intro() {
     write_block "$output_file" "Phase 1        : $discovery_label on the top 1000 ports\n"
     write_block "$output_file" "Phase 2        : Service/version detection on open ports\n"
     write_block "$output_file" "Phase 3        : NSE vulnerability scripts (--script vuln) on open ports\n"
+    write_block "$output_file" "Phase 4        : OS detection (-O --osscan-guess)\n"
     write_block "$output_file" "Interpretation : If a phase summary says no open ports were found, Nmap still ran successfully but did not identify any open ports that matched the scan.\n"
     write_block "$output_file" "Interpretation : Vulnerability checks only produce findings when Nmap has an open service to test and a matching NSE vuln script returns output.\n"
     write_block "$output_file" "============================================================\n"
 }
 
-run_scan_phase() {
-    local ip=$1
-    local output_file=$2
+write_ports_table() {
+    local output_file=$1
+    local result_file=$2
+    local border="+--------+--------+----------+--------------------------+\n"
+    local found="false"
+
+    write_block "$output_file" "\nPorts Summary\n"
+    write_block "$output_file" "$border"
+    write_block "$output_file" "| Port   | Proto  | Status   | Reason                   |\n"
+    write_block "$output_file" "$border"
+
+    while IFS=$'\t' read -r port proto status reason; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-6s | %-6s | %-8s | %-24.24s |\n' "$port" "$proto" "$status" "$reason"
+        write_block "$output_file" "$row"
+    done < <(
+        awk '
+            /^[0-9]+\/(tcp|udp)[[:space:]]+open/ {
+                split($1, parts, "/")
+                port=parts[1]
+                proto=parts[2]
+                status=$2
+                reason=""
+                if (NF >= 4) {
+                    for (i = 4; i <= NF; i++) {
+                        reason = reason (reason ? " " : "") $i
+                    }
+                }
+                if (reason == "") {
+                    reason = "reported by nmap"
+                }
+                print port "\t" proto "\t" status "\t" reason
+            }
+        ' "$result_file"
+    )
+
+    if [ "$found" = "false" ]; then
+        write_block "$output_file" "| none   | n/a    | none     | No open ports reported   |\n"
+    fi
+
+    write_block "$output_file" "$border"
+}
+
+write_services_table() {
+    local output_file=$1
+    local result_file=$2
+    local border="+--------+--------+------------------+----------------------------------+\n"
+    local found="false"
+
+    write_block "$output_file" "\nServices Summary\n"
+    write_block "$output_file" "$border"
+    write_block "$output_file" "| Port   | Proto  | Service          | Details                          |\n"
+    write_block "$output_file" "$border"
+
+    while IFS=$'\t' read -r port proto service details; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-6s | %-6s | %-16.16s | %-32.32s |\n' "$port" "$proto" "$service" "$details"
+        write_block "$output_file" "$row"
+    done < <(
+        awk '
+            /^[0-9]+\/(tcp|udp)[[:space:]]+open/ {
+                split($1, parts, "/")
+                port=parts[1]
+                proto=parts[2]
+                service=$3
+                details=""
+                if (NF >= 4) {
+                    for (i = 4; i <= NF; i++) {
+                        details = details (details ? " " : "") $i
+                    }
+                }
+                if (details == "") {
+                    details = "No version string returned"
+                }
+                print port "\t" proto "\t" service "\t" details
+            }
+        ' "$result_file"
+    )
+
+    if [ "$found" = "false" ]; then
+        write_block "$output_file" "| none   | n/a    | none             | No services identified           |\n"
+    fi
+
+    write_block "$output_file" "$border"
+}
+
+write_vuln_table() {
+    local output_file=$1
+    local result_file=$2
+    local border="+--------+--------+------------------+----------------------------------+\n"
+    local found="false"
+
+    write_block "$output_file" "\nVulnerability Summary\n"
+    write_block "$output_file" "$border"
+    write_block "$output_file" "| Port   | Proto  | Service          | Vulnerability Script             |\n"
+    write_block "$output_file" "$border"
+
+    while IFS=$'\t' read -r port proto service script_name; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-6s | %-6s | %-16.16s | %-32.32s |\n' "$port" "$proto" "$service" "$script_name"
+        write_block "$output_file" "$row"
+    done < <(extract_vuln_rows "$result_file")
+
+    if [ "$found" = "false" ]; then
+        write_block "$output_file" "| none   | n/a    | none             | No vulnerability findings        |\n"
+    fi
+
+    write_block "$output_file" "$border"
+}
+
+write_os_table() {
+    local output_file=$1
+    local result_file=$2
+    local border="+----------------------+------------------------------------------+\n"
+    local os_guess
+    local device_type
+    local network_distance
+    local detection_status
+
+    os_guess=$(os_detected_value "$result_file")
+    device_type=$(os_device_type_value "$result_file")
+    network_distance=$(os_distance_value "$result_file")
+
+    if grep -qi 'requires root privileges' "$result_file"; then
+        detection_status="Needs sudo/root privileges"
+    elif [ "$os_guess" = "Not identified" ]; then
+        detection_status="No confident OS fingerprint"
+    else
+        detection_status="OS fingerprint reported"
+    fi
+
+    write_block "$output_file" "\nOS Summary\n"
+    write_block "$output_file" "$border"
+    write_block "$output_file" "| Field                | Value                                    |\n"
+    write_block "$output_file" "$border"
+    printf -v row '| %-20s | %-40.40s |\n' "OS guess" "$os_guess"
+    write_block "$output_file" "$row"
+    printf -v row '| %-20s | %-40.40s |\n' "Device type" "$device_type"
+    write_block "$output_file" "$row"
+    printf -v row '| %-20s | %-40.40s |\n' "Network distance" "$network_distance"
+    write_block "$output_file" "$row"
+    printf -v row '| %-20s | %-40.40s |\n' "Detection status" "$detection_status"
+    write_block "$output_file" "$row"
+    write_block "$output_file" "$border"
+}
+
+write_phase_details() {
+    local output_file=$1
+    local ip=$2
     local phase_title=$3
     local phase_description=$4
-    local temp_file
-    local open_ports
-    local summary
-    shift 4
-
-    temp_file=$(mktemp)
+    local phase_summary=$5
+    local result_file=$6
+    shift 6
 
     write_block "$output_file" "\n=== $phase_title ($ip) ===\n"
     write_block "$output_file" "Purpose: $phase_description\n"
     write_block "$output_file" "Command: $(printf '%q ' "$@")\n"
-
-    if ! "$@" > "$temp_file" 2>&1; then
-        write_block "$output_file" "Status : Scan command failed. Raw output follows.\n"
-        append_file "$output_file" "$temp_file"
-        rm -f "$temp_file"
-        return 1
-    fi
-
-    open_ports=$(count_open_ports "$temp_file")
-    summary="Status : Scan completed. "
-
-    case "$phase_title" in
-        "Phase 1: "*)
-            if [ "$open_ports" -gt 0 ]; then
-                summary+="Open ports found in discovery: $open_ports."
-            else
-                summary+="No open ports were reported during discovery."
-            fi
-            ;;
-        "Phase 2: "*)
-            if [ "$open_ports" -gt 0 ]; then
-                summary+="Service detection returned $open_ports open port entry(s)."
-            else
-                summary+="No open ports were available for service detection results."
-            fi
-            ;;
-        "Phase 3: "*)
-            if [ "$open_ports" -gt 0 ]; then
-                if phase_has_vuln_findings "$temp_file"; then
-                    summary+="Vulnerability scripts returned output for at least one open service."
-                else
-                    summary+="Vulnerability scripts ran against open services, but no findings were reported by the NSE vuln scripts."
-                fi
-            else
-                summary+="No open ports were available for vulnerability script checks."
-            fi
-            ;;
-    esac
-
-    write_block "$output_file" "$summary\n"
+    write_block "$output_file" "Status : $phase_summary\n"
     write_block "$output_file" "Raw Nmap output:\n"
-    append_file "$output_file" "$temp_file"
-    rm -f "$temp_file"
+    append_file "$output_file" "$result_file"
 }
 
 # Function to scan one IP
@@ -214,11 +461,23 @@ scan_ip() {
     local total_targets=${5:-1}
     local output_file=""
     local current_step=0
-    local total_steps=$(( total_targets * 3 ))
+    local total_steps=$(( total_targets * 4 ))
     local show_progress="false"
     local discovery_label=""
     local -a scan_prefix
     local -a phase_cmd
+    local discovery_file
+    local service_file
+    local vuln_file
+    local os_file
+    local discovery_status=0
+    local service_status=0
+    local vuln_status=0
+    local os_status=0
+    local discovery_summary=""
+    local service_summary=""
+    local vuln_summary=""
+    local os_summary=""
 
     echo -e "${YELLOW}[*] Starting scan for IP: $ip${NC}"
 
@@ -241,9 +500,12 @@ scan_ip() {
         discovery_label="Stealth SYN scan"
     fi
 
-    write_report_intro "$ip" "$output_file" "$MODE_LABEL" "$discovery_label"
+    discovery_file=$(mktemp)
+    service_file=$(mktemp)
+    vuln_file=$(mktemp)
+    os_file=$(mktemp)
 
-    current_step=$(( (target_index - 1) * 3 + 1 ))
+    current_step=$(( (target_index - 1) * 4 + 1 ))
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "$discovery_label"
     fi
@@ -253,25 +515,79 @@ scan_ip() {
     else
         phase_cmd=("${scan_prefix[@]}" -Pn -sT --top-ports 1000 --open --reason "$ip")
     fi
-    run_scan_phase "$ip" "$output_file" "Phase 1: $discovery_label" "Identify open ports using the initial discovery pass." "${phase_cmd[@]}"
+    if run_scan_capture "$discovery_file" "${phase_cmd[@]}"; then
+        discovery_status=0
+    else
+        discovery_status=$?
+    fi
 
-    current_step=$(( (target_index - 1) * 3 + 2 ))
+    current_step=$(( (target_index - 1) * 4 + 2 ))
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "Service detection scan"
     fi
     phase_cmd=("${scan_prefix[@]}" -Pn -sV --open --reason "$ip")
-    run_scan_phase "$ip" "$output_file" "Phase 2: Service detection" "Fingerprint the versions of any open services Nmap can identify." "${phase_cmd[@]}"
+    if run_scan_capture "$service_file" "${phase_cmd[@]}"; then
+        service_status=0
+    else
+        service_status=$?
+    fi
 
-    current_step=$(( (target_index - 1) * 3 + 3 ))
+    current_step=$(( (target_index - 1) * 4 + 3 ))
     if [ "$show_progress" = "true" ]; then
         draw_progress_bar "$current_step" "$total_steps" "$ip" "Vulnerability script scan"
     fi
     phase_cmd=("${scan_prefix[@]}" -Pn -sV --script vuln --open --reason "$ip")
-    run_scan_phase "$ip" "$output_file" "Phase 3: Vulnerability checks" "Run Nmap NSE vulnerability scripts against any open services." "${phase_cmd[@]}"
+    if run_scan_capture "$vuln_file" "${phase_cmd[@]}"; then
+        vuln_status=0
+    else
+        vuln_status=$?
+    fi
+
+    current_step=$(( (target_index - 1) * 4 + 4 ))
+    if [ "$show_progress" = "true" ]; then
+        draw_progress_bar "$current_step" "$total_steps" "$ip" "OS detection scan"
+    fi
+    phase_cmd=("${scan_prefix[@]}" -Pn -O --osscan-guess "$ip")
+    if run_scan_capture "$os_file" "${phase_cmd[@]}"; then
+        os_status=0
+    else
+        os_status=$?
+    fi
 
     if [ "$show_progress" = "true" ]; then
         printf '\n'
     fi
+
+    discovery_summary=$(summarize_phase "discovery" "$discovery_file" "$discovery_status")
+    service_summary=$(summarize_phase "service" "$service_file" "$service_status")
+    vuln_summary=$(summarize_phase "vuln" "$vuln_file" "$vuln_status")
+    os_summary=$(summarize_phase "os" "$os_file" "$os_status")
+
+    write_report_intro "$ip" "$output_file" "$MODE_LABEL" "$discovery_label"
+    write_ports_table "$output_file" "$discovery_file"
+    write_services_table "$output_file" "$service_file"
+    write_vuln_table "$output_file" "$vuln_file"
+    write_os_table "$output_file" "$os_file"
+
+    write_block "$output_file" "\nDetailed Results\n"
+
+    if [ -n "$sudo_cmd" ]; then
+        phase_cmd=(sudo nmap -Pn -sS --top-ports 1000 --open --reason "$ip")
+    else
+        phase_cmd=(nmap -Pn -sT --top-ports 1000 --open --reason "$ip")
+    fi
+    write_phase_details "$output_file" "$ip" "Phase 1: $discovery_label" "Identify open ports using the initial discovery pass." "$discovery_summary" "$discovery_file" "${phase_cmd[@]}"
+
+    phase_cmd=("${scan_prefix[@]}" -Pn -sV --open --reason "$ip")
+    write_phase_details "$output_file" "$ip" "Phase 2: Service detection" "Fingerprint the versions of any open services Nmap can identify." "$service_summary" "$service_file" "${phase_cmd[@]}"
+
+    phase_cmd=("${scan_prefix[@]}" -Pn -sV --script vuln --open --reason "$ip")
+    write_phase_details "$output_file" "$ip" "Phase 3: Vulnerability checks" "Run Nmap NSE vulnerability scripts against any open services." "$vuln_summary" "$vuln_file" "${phase_cmd[@]}"
+
+    phase_cmd=("${scan_prefix[@]}" -Pn -O --osscan-guess "$ip")
+    write_phase_details "$output_file" "$ip" "Phase 4: OS detection" "Attempt to identify the target operating system from its network fingerprint." "$os_summary" "$os_file" "${phase_cmd[@]}"
+
+    rm -f "$discovery_file" "$service_file" "$vuln_file" "$os_file"
 
     echo -e "${GREEN}[✓] Scan completed for $ip${NC}"
     echo "--------------------------------------------------------"

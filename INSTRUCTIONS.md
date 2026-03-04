@@ -33,6 +33,7 @@ For multi-target runs, the script performs these phases per IP:
 1. Port discovery
 2. Service detection
 3. Vulnerability checks
+4. OS detection
 
 The first phase label changes based on privilege mode:
 
@@ -44,6 +45,7 @@ The first phase label changes based on privilege mode:
 - If output goes to the terminal, each IP gets a `nmap_scan_<ip>.txt` file.
 - If output is redirected, everything goes to the redirected destination instead.
 - Each saved report contains:
+  - top-of-report summary tables for ports, services, vulnerabilities, and OS detection
   - a short explanation of what each phase does
   - the exact Nmap command used for that phase
   - a summary stating whether open ports or vuln-script findings were reported
