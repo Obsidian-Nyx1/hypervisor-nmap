@@ -316,10 +316,11 @@ write_report_intro() {
 
 write_single_ip_summary_table() {
     local output_file=$1
-    local discovery_file=$2
-    local service_file=$3
-    local vuln_file=$4
-    local os_file=$5
+    local ip=$2
+    local discovery_file=$3
+    local service_file=$4
+    local vuln_file=$5
+    local os_file=$6
     local border="+----------+--------+--------+----------------------+----------------------------------+\n"
     local found="false"
     local os_guess
@@ -339,7 +340,7 @@ write_single_ip_summary_table() {
         detection_status="OS fingerprint reported"
     fi
 
-    write_block "$output_file" "\nSummary Table\n"
+    write_block "$output_file" "\nSummary Table ($ip)\n"
     write_block "$output_file" "$border"
     write_block "$output_file" "| Type     | Port   | Proto  | Label                | Result                           |\n"
     write_block "$output_file" "$border"
@@ -425,7 +426,7 @@ write_ports_table() {
     local border="+-----------------+--------+--------+----------+--------------------------+\n"
     local found="false"
 
-    write_block "$output_file" "\nPorts Summary\n"
+    write_block "$output_file" "\nPorts Summary ($ip)\n"
     write_block "$output_file" "$border"
     write_block "$output_file" "| IP              | Port   | Proto  | Status   | Reason                   |\n"
     write_block "$output_file" "$border"
@@ -471,7 +472,7 @@ write_services_table() {
     local border="+-----------------+--------+--------+------------------+----------------------------------+\n"
     local found="false"
 
-    write_block "$output_file" "\nServices Summary\n"
+    write_block "$output_file" "\nServices Summary ($ip)\n"
     write_block "$output_file" "$border"
     write_block "$output_file" "| IP              | Port   | Proto  | Service          | Details                          |\n"
     write_block "$output_file" "$border"
@@ -517,7 +518,7 @@ write_vuln_table() {
     local border="+-----------------+--------+--------+------------------+----------------------------------+\n"
     local found="false"
 
-    write_block "$output_file" "\nVulnerability Summary\n"
+    write_block "$output_file" "\nVulnerability Summary ($ip)\n"
     write_block "$output_file" "$border"
     write_block "$output_file" "| IP              | Port   | Proto  | Service          | Vulnerability Script             |\n"
     write_block "$output_file" "$border"
@@ -559,7 +560,7 @@ write_os_table() {
         detection_status="OS fingerprint reported"
     fi
 
-    write_block "$output_file" "\nOS Summary\n"
+    write_block "$output_file" "\nOS Summary ($ip)\n"
     write_block "$output_file" "$border"
     write_block "$output_file" "| IP              | Field                | Value                                    |\n"
     write_block "$output_file" "$border"
@@ -707,7 +708,7 @@ scan_ip() {
 
     write_report_intro "$ip" "$output_file" "$MODE_LABEL" "$discovery_label"
     if [ "$total_targets" -le 1 ]; then
-        write_single_ip_summary_table "$output_file" "$discovery_file" "$service_file" "$vuln_file" "$os_file"
+        write_single_ip_summary_table "$output_file" "$ip" "$discovery_file" "$service_file" "$vuln_file" "$os_file"
     else
         write_ports_table "$output_file" "$ip" "$discovery_file"
         write_services_table "$output_file" "$ip" "$service_file"
