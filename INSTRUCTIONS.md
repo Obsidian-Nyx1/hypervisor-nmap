@@ -45,7 +45,8 @@ The first phase label changes based on privilege mode:
 - If output goes to the terminal, each IP gets a `nmap_scan_<ip>.txt` file.
 - If output is redirected, everything goes to the redirected destination instead.
 - Each saved report contains:
-  - top-of-report summary tables for ports, services, vulnerabilities, and OS detection
+  - a single compact summary table for single-IP runs
+  - IP-labelled summary tables for multi-IP runs
   - a short explanation of what each phase does
   - the exact Nmap command used for that phase
   - a summary stating whether open ports or vuln-script findings were reported

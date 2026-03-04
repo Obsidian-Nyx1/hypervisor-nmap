@@ -8,7 +8,8 @@
 - Single target scanning
 - Multi-target file scanning
 - Per-phase progress bar in terminal runs
-- Executive summary tables for ports, services, vulnerabilities, and OS detection
+- Compact single-IP summary table for ports, services, vulnerabilities, and OS detection
+- IP-labelled summary tables for multi-target runs
 - Explanatory report header and detailed per-phase sections
 - Single redirected output stream when stdout is redirected
 

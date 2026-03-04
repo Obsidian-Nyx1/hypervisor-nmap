@@ -1,8 +1,8 @@
 ============================================================
 Hypervisor Assessment Report
 Target         : 192.168.56.102
-Privilege mode : sudo
-Phase 1        : Stealth SYN scan on the top 1000 ports
+Privilege mode : no-sudo
+Phase 1        : TCP connect scan on the top 1000 ports
 Phase 2        : Service/version detection on open ports
 Phase 3        : NSE vulnerability scripts (--script vuln) on open ports
 Phase 4        : OS detection (-O --osscan-guess)
@@ -14,10 +14,10 @@ Ports Summary
 +--------+--------+----------+--------------------------+
 | Port   | Proto  | Status   | Reason                   |
 +--------+--------+----------+--------------------------+
-| 135    | tcp    | open     | syn-ack ttl 128          |
-| 139    | tcp    | open     | syn-ack ttl 128          |
-| 445    | tcp    | open     | syn-ack ttl 128          |
-| 3389   | tcp    | open     | syn-ack ttl 128          |
+| 135    | tcp    | open     | syn-ack                  |
+| 139    | tcp    | open     | syn-ack                  |
+| 445    | tcp    | open     | syn-ack                  |
+| 3389   | tcp    | open     | syn-ack                  |
 +--------+--------+----------+--------------------------+
 
 Services Summary
@@ -34,9 +34,9 @@ Vulnerability Summary
 +--------+--------+------------------+----------------------------------+
 | Port   | Proto  | Service          | Vulnerability Script             |
 +--------+--------+------------------+----------------------------------+
-| 3389   | tcp    | ms-wbt-server    | samba-vuln-cve-2012-1182         |
-| 3389   | tcp    | ms-wbt-server    | smb-vuln-ms10-054                |
 | 3389   | tcp    | ms-wbt-server    | smb-vuln-ms10-061                |
+| 3389   | tcp    | ms-wbt-server    | smb-vuln-ms10-054                |
+| 3389   | tcp    | ms-wbt-server    | samba-vuln-cve-2012-1182         |
 +--------+--------+------------------+----------------------------------+
 
 OS Summary
@@ -51,34 +51,33 @@ OS Summary
 
 Detailed Results
 
-=== Phase 1: Stealth SYN scan (192.168.56.102) ===
+=== Phase 1: TCP connect scan (192.168.56.102) ===
 Purpose: Identify open ports using the initial discovery pass.
-Command: sudo nmap -Pn -sS --top-ports 1000 --open --reason 192.168.56.102 
+Command: nmap -Pn -sT --top-ports 1000 --open --reason 192.168.56.102 
 Status : Scan completed. Open ports found in discovery: 4.
 Raw Nmap output:
-Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:39 GMT
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:53 GMT
 Nmap scan report for 192.168.56.102
-Host is up, received arp-response (0.00016s latency).
-Not shown: 918 closed tcp ports (reset), 78 filtered tcp ports (no-response)
+Host is up, received user-set (0.00065s latency).
+Not shown: 816 closed tcp ports (conn-refused), 180 filtered tcp ports (no-response)
 Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
 PORT     STATE SERVICE       REASON
-135/tcp  open  msrpc         syn-ack ttl 128
-139/tcp  open  netbios-ssn   syn-ack ttl 128
-445/tcp  open  microsoft-ds  syn-ack ttl 128
-3389/tcp open  ms-wbt-server syn-ack ttl 128
-MAC Address: 08:00:27:39:9D:3B (PCS Systemtechnik/Oracle VirtualBox virtual NIC)
+135/tcp  open  msrpc         syn-ack
+139/tcp  open  netbios-ssn   syn-ack
+445/tcp  open  microsoft-ds  syn-ack
+3389/tcp open  ms-wbt-server syn-ack
 
 Nmap done: 1 IP address (1 host up) scanned in 1.98 seconds
 
 === Phase 2: Service detection (192.168.56.102) ===
 Purpose: Fingerprint the versions of any open services Nmap can identify.
-Command: sudo nmap -Pn -sV --open --reason 192.168.56.102 
+Command: nmap -Pn -sV --open --reason 192.168.56.102 
 Status : Scan completed. Service detection returned 4 open port entry(s).
 Raw Nmap output:
-Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:39 GMT
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:53 GMT
 Nmap scan report for 192.168.56.102
-Host is up, received arp-response (0.00030s latency).
-Not shown: 920 closed tcp ports (reset), 76 filtered tcp ports (no-response)
+Host is up, received arp-response (0.00064s latency).
+Not shown: 955 closed tcp ports (reset), 41 filtered tcp ports (no-response)
 Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
 PORT     STATE SERVICE       REASON          VERSION
 135/tcp  open  msrpc         syn-ack ttl 128 Microsoft Windows RPC
@@ -89,17 +88,17 @@ MAC Address: 08:00:27:39:9D:3B (PCS Systemtechnik/Oracle VirtualBox virtual NIC)
 Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
 
 Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
-Nmap done: 1 IP address (1 host up) scanned in 8.11 seconds
+Nmap done: 1 IP address (1 host up) scanned in 8.03 seconds
 
 === Phase 3: Vulnerability checks (192.168.56.102) ===
 Purpose: Run Nmap NSE vulnerability scripts against any open services.
-Command: sudo nmap -Pn -sV --script vuln --open --reason 192.168.56.102 
+Command: nmap -Pn -sV --script vuln --open --reason 192.168.56.102 
 Status : Scan completed. Vulnerability scripts returned output for at least one open service.
 Raw Nmap output:
-Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:39 GMT
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:53 GMT
 Nmap scan report for 192.168.56.102
-Host is up, received arp-response (0.00051s latency).
-Not shown: 957 closed tcp ports (reset), 39 filtered tcp ports (no-response)
+Host is up, received arp-response (0.00074s latency).
+Not shown: 945 closed tcp ports (reset), 51 filtered tcp ports (no-response)
 Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
 PORT     STATE SERVICE       REASON          VERSION
 135/tcp  open  msrpc         syn-ack ttl 128 Microsoft Windows RPC
@@ -110,21 +109,21 @@ MAC Address: 08:00:27:39:9D:3B (PCS Systemtechnik/Oracle VirtualBox virtual NIC)
 Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
 
 Host script results:
-|_samba-vuln-cve-2012-1182: Could not negotiate a connection:SMB: Failed to receive bytes: ERROR
-|_smb-vuln-ms10-054: false
 |_smb-vuln-ms10-061: Could not negotiate a connection:SMB: Failed to receive bytes: ERROR
+|_smb-vuln-ms10-054: false
+|_samba-vuln-cve-2012-1182: Could not negotiate a connection:SMB: Failed to receive bytes: ERROR
 
 Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
-Nmap done: 1 IP address (1 host up) scanned in 46.96 seconds
+Nmap done: 1 IP address (1 host up) scanned in 46.99 seconds
 
 === Phase 4: OS detection (192.168.56.102) ===
 Purpose: Attempt to identify the target operating system from its network fingerprint.
-Command: sudo nmap -Pn -O --osscan-guess 192.168.56.102 
+Command: nmap -Pn -O --osscan-guess 192.168.56.102 
 Status : Scan completed. OS detection produced a fingerprint result.
 Raw Nmap output:
-Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:40 GMT
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-03-04 10:54 GMT
 Nmap scan report for 192.168.56.102
-Host is up (0.00055s latency).
+Host is up (0.00059s latency).
 Not shown: 996 closed tcp ports (reset)
 PORT     STATE SERVICE
 135/tcp  open  msrpc
@@ -139,4 +138,4 @@ OS details: Microsoft Windows 10 1709 - 21H2
 Network Distance: 1 hop
 
 OS detection performed. Please report any incorrect results at https://nmap.org/submit/ .
-Nmap done: 1 IP address (1 host up) scanned in 19.50 seconds
+Nmap done: 1 IP address (1 host up) scanned in 12.30 seconds

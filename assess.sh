@@ -286,21 +286,126 @@ write_report_intro() {
     write_block "$output_file" "============================================================\n"
 }
 
-write_ports_table() {
+write_single_ip_summary_table() {
     local output_file=$1
-    local result_file=$2
-    local border="+--------+--------+----------+--------------------------+\n"
+    local discovery_file=$2
+    local service_file=$3
+    local vuln_file=$4
+    local os_file=$5
+    local border="+----------+--------+--------+----------------------+----------------------------------+\n"
     local found="false"
+    local os_guess
+    local device_type
+    local network_distance
+    local detection_status
 
-    write_block "$output_file" "\nPorts Summary\n"
+    os_guess=$(os_detected_value "$os_file")
+    device_type=$(os_device_type_value "$os_file")
+    network_distance=$(os_distance_value "$os_file")
+
+    if grep -qi 'requires root privileges' "$os_file"; then
+        detection_status="Needs sudo/root privileges"
+    elif [ "$os_guess" = "Not identified" ]; then
+        detection_status="No confident OS fingerprint"
+    else
+        detection_status="OS fingerprint reported"
+    fi
+
+    write_block "$output_file" "\nSummary Table\n"
     write_block "$output_file" "$border"
-    write_block "$output_file" "| Port   | Proto  | Status   | Reason                   |\n"
+    write_block "$output_file" "| Type     | Port   | Proto  | Label                | Result                           |\n"
     write_block "$output_file" "$border"
 
     while IFS=$'\t' read -r port proto status reason; do
         [ -z "$port" ] && continue
         found="true"
-        printf -v row '| %-6s | %-6s | %-8s | %-24.24s |\n' "$port" "$proto" "$status" "$reason"
+        printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "Port" "$port" "$proto" "$status" "$reason"
+        write_block "$output_file" "$row"
+    done < <(
+        awk '
+            /^[0-9]+\/(tcp|udp)[[:space:]]+open/ {
+                split($1, parts, "/")
+                port=parts[1]
+                proto=parts[2]
+                status=$2
+                reason=""
+                if (NF >= 4) {
+                    for (i = 4; i <= NF; i++) {
+                        reason = reason (reason ? " " : "") $i
+                    }
+                }
+                if (reason == "") {
+                    reason = "reported by nmap"
+                }
+                print port "\t" proto "\t" status "\t" reason
+            }
+        ' "$discovery_file"
+    )
+
+    while IFS=$'\t' read -r port proto service details; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "Service" "$port" "$proto" "$service" "$details"
+        write_block "$output_file" "$row"
+    done < <(
+        awk '
+            /^[0-9]+\/(tcp|udp)[[:space:]]+open/ {
+                split($1, parts, "/")
+                port=parts[1]
+                proto=parts[2]
+                service=$3
+                details=""
+                if (NF >= 4) {
+                    for (i = 4; i <= NF; i++) {
+                        details = details (details ? " " : "") $i
+                    }
+                }
+                if (details == "") {
+                    details = "No version string returned"
+                }
+                print port "\t" proto "\t" service "\t" details
+            }
+        ' "$service_file"
+    )
+
+    while IFS=$'\t' read -r port proto service script_name; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "Vuln" "$port" "$proto" "$service" "$script_name"
+        write_block "$output_file" "$row"
+    done < <(extract_vuln_rows "$vuln_file")
+
+    if [ "$found" = "false" ]; then
+        write_block "$output_file" "| none     | n/a    | n/a    | Findings             | No open ports or findings        |\n"
+    fi
+
+    printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "OS" "n/a" "n/a" "OS guess" "$os_guess"
+    write_block "$output_file" "$row"
+    printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "OS" "n/a" "n/a" "Device type" "$device_type"
+    write_block "$output_file" "$row"
+    printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "OS" "n/a" "n/a" "Network distance" "$network_distance"
+    write_block "$output_file" "$row"
+    printf -v row '| %-8s | %-6s | %-6s | %-20.20s | %-32.32s |\n' "OS" "n/a" "n/a" "Detection status" "$detection_status"
+    write_block "$output_file" "$row"
+    write_block "$output_file" "$border"
+}
+
+write_ports_table() {
+    local output_file=$1
+    local ip=$2
+    local result_file=$3
+    local border="+-----------------+--------+--------+----------+--------------------------+\n"
+    local found="false"
+
+    write_block "$output_file" "\nPorts Summary\n"
+    write_block "$output_file" "$border"
+    write_block "$output_file" "| IP              | Port   | Proto  | Status   | Reason                   |\n"
+    write_block "$output_file" "$border"
+
+    while IFS=$'\t' read -r port proto status reason; do
+        [ -z "$port" ] && continue
+        found="true"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-8s | %-24.24s |\n' "$ip" "$port" "$proto" "$status" "$reason"
         write_block "$output_file" "$row"
     done < <(
         awk '
@@ -324,7 +429,8 @@ write_ports_table() {
     )
 
     if [ "$found" = "false" ]; then
-        write_block "$output_file" "| none   | n/a    | none     | No open ports reported   |\n"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-8s | %-24.24s |\n' "$ip" "none" "n/a" "none" "No open ports reported"
+        write_block "$output_file" "$row"
     fi
 
     write_block "$output_file" "$border"
@@ -332,19 +438,20 @@ write_ports_table() {
 
 write_services_table() {
     local output_file=$1
-    local result_file=$2
-    local border="+--------+--------+------------------+----------------------------------+\n"
+    local ip=$2
+    local result_file=$3
+    local border="+-----------------+--------+--------+------------------+----------------------------------+\n"
     local found="false"
 
     write_block "$output_file" "\nServices Summary\n"
     write_block "$output_file" "$border"
-    write_block "$output_file" "| Port   | Proto  | Service          | Details                          |\n"
+    write_block "$output_file" "| IP              | Port   | Proto  | Service          | Details                          |\n"
     write_block "$output_file" "$border"
 
     while IFS=$'\t' read -r port proto service details; do
         [ -z "$port" ] && continue
         found="true"
-        printf -v row '| %-6s | %-6s | %-16.16s | %-32.32s |\n' "$port" "$proto" "$service" "$details"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-16.16s | %-32.32s |\n' "$ip" "$port" "$proto" "$service" "$details"
         write_block "$output_file" "$row"
     done < <(
         awk '
@@ -368,7 +475,8 @@ write_services_table() {
     )
 
     if [ "$found" = "false" ]; then
-        write_block "$output_file" "| none   | n/a    | none             | No services identified           |\n"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-16.16s | %-32.32s |\n' "$ip" "none" "n/a" "none" "No services identified"
+        write_block "$output_file" "$row"
     fi
 
     write_block "$output_file" "$border"
@@ -376,24 +484,26 @@ write_services_table() {
 
 write_vuln_table() {
     local output_file=$1
-    local result_file=$2
-    local border="+--------+--------+------------------+----------------------------------+\n"
+    local ip=$2
+    local result_file=$3
+    local border="+-----------------+--------+--------+------------------+----------------------------------+\n"
     local found="false"
 
     write_block "$output_file" "\nVulnerability Summary\n"
     write_block "$output_file" "$border"
-    write_block "$output_file" "| Port   | Proto  | Service          | Vulnerability Script             |\n"
+    write_block "$output_file" "| IP              | Port   | Proto  | Service          | Vulnerability Script             |\n"
     write_block "$output_file" "$border"
 
     while IFS=$'\t' read -r port proto service script_name; do
         [ -z "$port" ] && continue
         found="true"
-        printf -v row '| %-6s | %-6s | %-16.16s | %-32.32s |\n' "$port" "$proto" "$service" "$script_name"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-16.16s | %-32.32s |\n' "$ip" "$port" "$proto" "$service" "$script_name"
         write_block "$output_file" "$row"
     done < <(extract_vuln_rows "$result_file")
 
     if [ "$found" = "false" ]; then
-        write_block "$output_file" "| none   | n/a    | none             | No vulnerability findings        |\n"
+        printf -v row '| %-15.15s | %-6s | %-6s | %-16.16s | %-32.32s |\n' "$ip" "none" "n/a" "none" "No vulnerability findings"
+        write_block "$output_file" "$row"
     fi
 
     write_block "$output_file" "$border"
@@ -401,8 +511,9 @@ write_vuln_table() {
 
 write_os_table() {
     local output_file=$1
-    local result_file=$2
-    local border="+----------------------+------------------------------------------+\n"
+    local ip=$2
+    local result_file=$3
+    local border="+-----------------+----------------------+------------------------------------------+\n"
     local os_guess
     local device_type
     local network_distance
@@ -422,15 +533,15 @@ write_os_table() {
 
     write_block "$output_file" "\nOS Summary\n"
     write_block "$output_file" "$border"
-    write_block "$output_file" "| Field                | Value                                    |\n"
+    write_block "$output_file" "| IP              | Field                | Value                                    |\n"
     write_block "$output_file" "$border"
-    printf -v row '| %-20s | %-40.40s |\n' "OS guess" "$os_guess"
+    printf -v row '| %-15.15s | %-20s | %-40.40s |\n' "$ip" "OS guess" "$os_guess"
     write_block "$output_file" "$row"
-    printf -v row '| %-20s | %-40.40s |\n' "Device type" "$device_type"
+    printf -v row '| %-15.15s | %-20s | %-40.40s |\n' "$ip" "Device type" "$device_type"
     write_block "$output_file" "$row"
-    printf -v row '| %-20s | %-40.40s |\n' "Network distance" "$network_distance"
+    printf -v row '| %-15.15s | %-20s | %-40.40s |\n' "$ip" "Network distance" "$network_distance"
     write_block "$output_file" "$row"
-    printf -v row '| %-20s | %-40.40s |\n' "Detection status" "$detection_status"
+    printf -v row '| %-15.15s | %-20s | %-40.40s |\n' "$ip" "Detection status" "$detection_status"
     write_block "$output_file" "$row"
     write_block "$output_file" "$border"
 }
@@ -564,10 +675,14 @@ scan_ip() {
     os_summary=$(summarize_phase "os" "$os_file" "$os_status")
 
     write_report_intro "$ip" "$output_file" "$MODE_LABEL" "$discovery_label"
-    write_ports_table "$output_file" "$discovery_file"
-    write_services_table "$output_file" "$service_file"
-    write_vuln_table "$output_file" "$vuln_file"
-    write_os_table "$output_file" "$os_file"
+    if [ "$total_targets" -le 1 ]; then
+        write_single_ip_summary_table "$output_file" "$discovery_file" "$service_file" "$vuln_file" "$os_file"
+    else
+        write_ports_table "$output_file" "$ip" "$discovery_file"
+        write_services_table "$output_file" "$ip" "$service_file"
+        write_vuln_table "$output_file" "$ip" "$vuln_file"
+        write_os_table "$output_file" "$ip" "$os_file"
+    fi
 
     write_block "$output_file" "\nDetailed Results\n"
 
