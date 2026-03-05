@@ -117,19 +117,19 @@ Example:
 Single target, default timing:
 
 ```bash
-./assess.sh 192.168.56.102
+./assess.sh 203.0.113.42
 ```
 
 Single target, slower timing:
 
 ```bash
-./assess.sh -t2 192.168.56.102
+./assess.sh -t2 203.0.113.42
 ```
 
 Privileged scan:
 
 ```bash
-./assess.sh --sudo 192.168.56.102
+./assess.sh --sudo 203.0.113.42
 ```
 
 Multiple targets from file:
