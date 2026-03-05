@@ -47,6 +47,7 @@ The first phase label changes based on privilege mode:
 
 - If output goes to the terminal, each IP gets a `nmap_scan_<ip>.txt` file.
 - If output is redirected, everything goes to the redirected destination instead.
+- Generated report artifacts must not be committed to git (`nmap_scan_*.txt`, `reports/`, `bulk_report.txt`).
 - Each saved report contains:
   - a single compact summary table for single-IP runs
   - IP-labelled summary tables for multi-IP runs

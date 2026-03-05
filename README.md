@@ -1,76 +1,59 @@
-# Hypervisor Nmap Assessment
+# Hypervisor-Nmp
 
-`assess.sh` is a Bash wrapper around `nmap` for scanning a single IP address or a file of IPs.
+`Hypervisor-Nmp` is a Bash-based Nmap wrapper for assessing one IPv4 target or a list of IPv4 targets with a consistent reporting format.
+
+The script performs four phases per target:
+- port discovery
+- service/version detection
+- NSE vulnerability checks
+- OS detection
 
 ## Features
 
-- Optional `--sudo` mode, with no-sudo as the default
-- Single target scanning
-- Multi-target file scanning
-- Per-phase progress bar in terminal runs
-- Compact single-IP summary table for ports, services, vulnerabilities, and OS detection
-- IP-labelled summary tables for multi-target runs
-- Explanatory report header and detailed per-phase sections
-- Single redirected output stream when stdout is redirected
+- single-IP and multi-IP scanning
+- optional `--sudo` mode for privileged scans
+- timing controls limited to `-T0` through `-T4`
+- default timing locked to `-T4`
+- terminal progress bar with per-phase status
+- compact single-IP summary table
+- IP-labelled multi-IP summary sections
+- detailed raw Nmap output after the summary
 
 ## Requirements
 
 - Bash
 - `nmap`
-- `sudo` only if you choose `--sudo`
+- `sudo` only if you use `--sudo`
 
 ## Usage
 
 ```bash
-./assess.sh 192.168.1.100
-./assess.sh --sudo 192.168.1.100
-./assess.sh -t3 192.168.1.100
+./assess.sh <ip>
+./assess.sh --sudo <ip>
+./assess.sh -t3 <ip>
 ./assess.sh -f targets.txt
 ./assess.sh --sudo -t2 -f targets.txt
+./assess.sh -h
 ```
 
-## Modes
+## Options
 
-- default: runs `nmap` without `sudo`
-- `--sudo`: runs `nmap` through `sudo`. This can prompt for your sudo password if your session is not already authenticated.
-- `-t0` to `-t4`: set the Nmap timing template, with `-T4` used by default
-- values above `-T4` are rejected so the script never exceeds timing template 4
+- `--sudo`: run Nmap through `sudo`
+- `-t0` to `-t4`: set the Nmap timing template
+- default timing is `-T4`
+- values above `-T4` are rejected
+- `-f <file>`: scan targets from a text file
+- `-h`, `--help`: show help
 
-## Output Behavior
+## Timing Policy
 
-- Normal terminal run:
-  - Single-IP scans save to `nmap_scan_<ip>.txt`
-  - Multi-IP scans save each target to its own `nmap_scan_<ip>.txt`
-- Each report explains:
-  - whether discovery used a TCP connect scan or a stealth SYN scan
-  - whether any open ports were found
-  - whether service detection had open ports to fingerprint
-  - whether `--script vuln` returned any findings
-- Each report starts with summary tables for:
-  - ports and their status
-  - identified services
-  - vulnerability-script findings
-  - OS detection results
-- Redirected run such as `./assess.sh 192.168.1.10 > output.txt 2>&1`:
-  - results are written to the redirected output
-  - extra `nmap_scan_<ip>.txt` files are not created
+The script never exceeds `-T4`.
 
-## Progress
-
-When output is going to a terminal, the script shows:
-
-- overall progress bar
-- current IP being scanned
-- current phase:
-  - `Stealth SYN scan` when using `--sudo`
-  - `TCP connect scan` in default mode
-  - `Service detection scan`
-  - `Vulnerability script scan`
-  - `OS detection scan`
+If the user does not specify a timing value, it uses `-T4` by default. If the user supplies `-t0`, `-t1`, `-t2`, `-t3`, or `-t4`, that value is applied to every Nmap phase. Any value above `-T4` is rejected before scanning starts.
 
 ## Input File Format
 
-The file passed to `-f` should contain one IP per line. Empty lines and lines starting with `#` are ignored.
+The target file must contain one IPv4 address per line. Empty lines and lines beginning with `#` are ignored.
 
 Example:
 
@@ -80,3 +63,75 @@ Example:
 192.168.1.11
 192.168.1.12
 ```
+
+## Report Format
+
+Each report starts with a header describing:
+- target
+- privilege mode
+- timing policy
+- scan phases
+
+For a single IP, the report then shows one compact summary table that combines:
+- ports
+- services
+- vulnerability findings
+- OS detection
+
+For multi-IP runs, the report uses separate summary sections, and each section header includes the target IP:
+- `Ports Summary (<ip>)`
+- `Services Summary (<ip>)`
+- `Vulnerability Summary (<ip>)`
+- `OS Summary (<ip>)`
+
+After the summary, the report includes a `Detailed Results` section with:
+- phase purpose
+- exact Nmap command used
+- phase status summary
+- raw Nmap output
+
+## Output Behavior
+
+- terminal runs write per-target files as `nmap_scan_<ip>.txt`
+- redirected runs write everything to the redirected destination
+- no extra report files are created when stdout is redirected
+- generated report artifacts must not be committed to git (`nmap_scan_*.txt`, `reports/`, `bulk_report.txt`)
+
+Example:
+
+```bash
+./assess.sh -f targets.txt > bulk_report.txt 2>&1
+```
+
+## Examples
+
+Single target, default timing:
+
+```bash
+./assess.sh 192.168.56.102
+```
+
+Single target, slower timing:
+
+```bash
+./assess.sh -t2 192.168.56.102
+```
+
+Privileged scan:
+
+```bash
+./assess.sh --sudo 192.168.56.102
+```
+
+Multiple targets from file:
+
+```bash
+./assess.sh --sudo -t3 -f targets.txt
+```
+
+## Notes
+
+- default mode uses a TCP connect discovery scan
+- `--sudo` allows a stealth SYN discovery scan
+- OS detection is more reliable with `--sudo`
+- vulnerability script phases can take noticeably longer than discovery scans
