@@ -95,7 +95,16 @@ After the summary, the report includes a `Detailed Results` section with:
 - terminal runs write per-target files as `nmap_scan_<ip>.txt`
 - redirected runs write everything to the redirected destination
 - no extra report files are created when stdout is redirected
-- generated report artifacts must not be committed to git (`nmap_scan_*.txt`, `reports/`, `bulk_report.txt`)
+
+### Report Artifact Policy
+
+- report artifacts are local-only and must never be committed to this repository
+- ignored artifact patterns: `nmap_scan_*.txt`, `reports/`, `bulk_report.txt`
+- if a report file was previously tracked, untrack it with:
+
+```bash
+git rm --cached nmap_scan_*.txt
+```
 
 Example:
 
